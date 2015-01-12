@@ -122,9 +122,9 @@ class EmpericalBayes(LinearRegression):
             weights = self.linearMethod.getWeights(x, y)
             
             # Update the regularization factor
-            sigmaD = numpy.std(numpy.dot(weights, x) - ydata)
+            sigmaD = numpy.std(numpy.dot(weights, x) - y)
             sigmaW = numpy.std(weights)
-            self.reglambda = sigmaD / sigmaW
+            print(sigmaD, sigmaW)
             
             # Convergence criteria
             if abs(reglambdaold - self.reglambda) < self.regconv: break

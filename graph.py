@@ -3,38 +3,16 @@
 from __future__ import print_function
 
 from os import linesep
+from scipy.sparse import lil_matrix
+from numpy import nonzero, choose
 from collections import deque
-import scipy.sparse
-import numpy
-
-#class Edge(object):
-#    """
-#    Weighted edge class. Java version by Sedgewick & Wayne:
-#    http://algs4.cs.princeton.edu/43mst/Edge.java.html
-#    """
-#    v = 0
-#    w = 0
-#    weight = 0
-#    
-#    def __init__(self, v, w, weight):
-#        if v < 0 or w < 0: raise IndexError("Vertex must be nonnegative")
-#        self.v = v
-#        self.w = w
-#        self.weight = weight
-#    
-#    def other(self, v):
-#        if   self.v == v: return self.w
-#        elif self.w == v: return self.v
-#        else:             raise IndexError()
-#    
-#    def __str__(self):
-#        return "%d <--> %d : %f" % (self.v, self.w, self.weight)
 
 class EdgeWeightedGraph(object):
     """
-    Edge weighted graph. Java version by Sedgewick & Wayne:
-    http://algs4.cs.princeton.edu/43mst/EdgeWeightedGraph.java.html
-    Modified to do __setitem__ and __getitem__ faster.
+    Undirected graph with edge weights. Original Java version by Sedgewick & 
+    Wayne [http://algs4.cs.princeton.edu/43mst/EdgeWeightedGraph.java.html].
+    Modified to do __setitem__ and __getitem__ faster by using a dict for the
+    edges.
     """
 
     _size = 0
@@ -51,28 +29,28 @@ class EdgeWeightedGraph(object):
         self._adj = [[] for _ in range(V)]
         
     def __setitem__(self, key, value):
-        """
-        Set and get weight items using array notation.
-        """
+        """Setter for weight values."""
         # Do not accept slices or single entries
         if len(key) == 2 and type(key[0]) == int and type(key[1]) == int:
             i = key[0]
             j = key[1]
-            added = False
-            if not j in self._adj[i]:
+            added = False            
+            if j not in self._adj[i]:
                 self._adj[i].append(j)
-                self._edges[(i,j)] = value
                 added = True
-            if not i in self._adj[j]:
-                self._adj[j].append(i)
-                self._edges[(j,i)] = value            
+            if i not in self._adj[j]:
+                self._adj[j].append(i)          
                 added = True
             if added:
                 self._num_edges += 1
-                # Remove cache of sparse matrix.
-                self._csr_repr = None
+            
+            self._edges[(j,i)] = value  
+            self._edges[(i,j)] = value
+            # Remove cache of sparse matrix.
+            self._csr_repr = None
 
     def __getitem__(self, key):
+        """Weight value getter."""
         if self._edges.has_key(key):
             return self._edges[key]
         return None
@@ -81,15 +59,11 @@ class EdgeWeightedGraph(object):
         pass
     
     def adj(self, v):
-        """
-        Adjacent nodes.
-        """
+        """Adjacent nodes."""
         return self._adj[v]
     
     def degree(self, v):
-        """
-        Number of neighbors.
-        """
+        """Number of neighbors."""
         return len(self._adj[v])
     
     def __str__(self):
@@ -105,29 +79,25 @@ class EdgeWeightedGraph(object):
     
     @property
     def edges(self):
-        """
-        Edge generator (no repeats).
-        """
+        """Edge generator (no repeats)."""
         for key,weight in self._edges:
             if key[0] < key[1] : yield (key, weight)
 
     @property
     def matrix(self):
-        """
-        Convert and cache scipy.sparse matrix representation.
-        """
+        """Convert and cache scipy.sparse matrix representation."""
         if self._csr_repr == None:
             # TODO: make this faster by directly computing the csr matrix?
-            lil_matrix = scipy.sparse.lil_matrix((self.size, self.size))
+            lil = lil_matrix((self.size, self.size))
             for key, weight in self._edges.iteritems():
-                lil_matrix[key] = weight
-            self._csr_repr = lil_matrix.tocsr()
+                lil[key] = weight
+            self._csr_repr = lil.tocsr()
         return self._csr_repr
 
 class Bipartite(object):
     """
-    Bipartite class. Java version by Sedgewick & Wayne:
-    http://algs4.cs.princeton.edu/41undirected/Bipartite.java.html
+    Bipartite class. Original Java version by Sedgewick & Wayne
+    [http://algs4.cs.princeton.edu/41undirected/Bipartite.java.html].
     
     Determines if a graph is bipartite and generates partition.
     """
@@ -135,35 +105,22 @@ class Bipartite(object):
     _color = []
     
     def __init__(self, graph):
-        self.isBipartite = True
         self._color = graph.size*[-1]
+        try:
+            self._color = ncolor(graph, 2)
+        except ValueError:
+            self.isBipartite = False
+        else:
+            self.isBipartite = True
 
-        # BFS to see if the graph is partitioned
-        q = deque()
-        q.append(0)
-        self._color[0] = True
-        
-        while len(q) > 0:
-            v = q.popleft()
-            for w in graph.adj(v):
-                if self._color[w] == -1:
-                    self._color[w] = not self._color[v]
-                    q.append(w)
-                elif self._color[v] == self._color[w]:
-                    self.isBipartite = False
-    
     @property
     def color(self):
-        """
-        Binary array representing the partitions.
-        """
+        """Binary array representing the partitions."""
         return self._color
 
     @property
     def partition(self):
-        """
-        Generator over partition elements.
-        """
+        """Generator over partition elements."""
         if not self.isBipartite:
             raise ValueError("Graph is not bipartite")
 
@@ -178,12 +135,10 @@ class Bipartite(object):
             j += 1
     
     def mask(self, choice):
-        """
-        numpy mask for selecting the partition.
-        """
+        """Create mask for selecting the partition."""
         if not self.isBipartite:
             raise ValueError("Graph is not bipartite")
-        return numpy.nonzero(numpy.choose(self.color,[choice,not choice]))
+        return nonzero(choose(self.color,[not choice,choice]))
 
     def __str__(self):
         if not self.isBipartite: return "Graph is not bipartite"
@@ -193,10 +148,29 @@ class Bipartite(object):
         ret += 'B: ' + ' '.join(['%d' % i for i in self.partition if not self._color[i]])
         return ret
 
+def ncolor(graph, n):
+    """
+    Greedy algorithm for coloring a graph with n colors.
+    """
+    colors = graph.size * [-1]
+    q = deque()
+    q.append(0)
+    colors[0] = 0
+    
+    # BFS: label colors as we go.
+    while len(q) > 0:
+        v = q.popleft()
+        for w in graph.adj(v):
+            if colors[w] == -1:
+                colors[w] = (colors[v] + 1) % n
+                q.append(w)
+            elif colors[v] == colors[w]:
+                raise ValueError("Graph cannot be %d-colored" % n)
+                
+    return colors
+
 if __name__ == '__main__':
-    """
-    Unit tests.
-    """
+    """Unit tests."""
     g = EdgeWeightedGraph(6)
     g[0,1] = 1.
     g[1,2] = 1.

@@ -4,39 +4,37 @@ from __future__ import print_function
 
 import numpy
 
-def prob_index(l):
+def rand_index(l):
     """
     Return an index of the list with the probability given in the list.
     
-    Example: prob_index([0.5,0.25,0.5]) should return 0 50% of the time, 1 25% 
-    of the timem and 2 25% of the time.
+    Example: prob_index([0.5,0.25,0.25]) should return 0 50% of the time, 1 25% 
+    of the time and 2 25% of the time.
     """
     r = numpy.random.uniform(0., sum(l))
-    print(r)
     s = l[0]
     for i,p in enumerate(l):
         if r < s: return i
         s += p
     
     # Should only reach this point due to floating-point errors.
-    return -1 
+    return len(l) - 1
 
-def acf(series):
+def acf(x):
     """
     Autocorrelation function. (Not verified)
+    
+    http://stackoverflow.com/q/14297012/190597
+    http://en.wikipedia.org/wiki/Autocorrelation#Estimation
     """
-    n = len(series)
-    data = numpy.asarray(series)
-    mean = numpy.mean(data)
-    c0 = numpy.sum((data - mean) ** 2) / float(n)
-
-    def r(h):
-        acf_lag = ((data[:n - h] - mean) * (data[h:] - mean)).sum() / float(n) / c0
-        return round(acf_lag, 3)
-
-    x = numpy.arange(n) # Avoiding lag 0 calculation
-    acf_coeffs = map(r, x)
-    return acf_coeffs
+    x = numpy.array(x)
+    n = len(x)
+    variance = x.var()
+    x = x-x.mean()
+    r = numpy.correlate(x, x, mode = 'full')[-n:]
+    assert numpy.allclose(r, numpy.array([(x[:n-k]*x[-(n-k):]).sum() for k in range(n)]))
+    result = r/(variance*(numpy.arange(n, 0, -1)))
+    return result
 
 def partial_sums(it):
     """
