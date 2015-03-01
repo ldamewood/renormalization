@@ -3,68 +3,146 @@
 from __future__ import print_function
 
 from os import linesep
-from scipy.sparse import lil_matrix
+from scipy.sparse import csr_matrix
 from numpy import nonzero, choose
 from collections import deque
 
-class EdgeWeightedGraph(object):
+class Graph(object):
     """
-    Undirected graph with edge weights. Original Java version by Sedgewick & 
-    Wayne [http://algs4.cs.princeton.edu/43mst/EdgeWeightedGraph.java.html].
-    Modified to do __setitem__ and __getitem__ faster by using a dict for the
-    edges.
+    Fixed size graph object with integer vertices and generic vertex and edge
+    values.
     """
-
-    _size = 0
-    _edges = None
-    _num_edges = 0
-    _adj = None
-    _csr_repr = None
     
     def __init__(self, V):
-        if V < 0: raise IndexError("Number of vertices must be nonnegative")
+        if V < 0: raise IndexError('Size of graph must be nonnegative')
         self._size = V
-        self._edges = {}
         self._num_edges = 0
+        self._matrix_cache = None
         self._adj = [[] for _ in range(V)]
+        self._edges = {}
+        self._vertices = {}
+    
+    def _check_vertex(self, key):
+        """Check validity of vertex key"""
+        if hasattr(key, '__iter__'): return False
+        try:
+            key = int(key)
+        except TypeError:
+            return False
+    
+        if key < 0 or key >= self._size:
+            raise IndexError('key value %d is out of range.' % key)
+
+        return True
+    
+    def _check_edge(self, key):
+        """Check validity of edge key"""
+        if not hasattr(key, '__iter__'): return False
+        try:
+            length = len(key)
+        except TypeError:
+            return False
+
+        if length != 2: return False
         
+        if not self._check_vertex(key[0]): return False
+        if not self._check_vertex(key[1]): return False
+        
+        return True
+    
     def __setitem__(self, key, value):
-        """Setter for weight values."""
-        # Do not accept slices or single entries
-        if len(key) == 2 and type(key[0]) == int and type(key[1]) == int:
-            i = key[0]
-            j = key[1]
-            added = False            
-            if j not in self._adj[i]:
-                self._adj[i].append(j)
-                added = True
-            if i not in self._adj[j]:
-                self._adj[j].append(i)          
-                added = True
-            if added:
-                self._num_edges += 1
-            
-            self._edges[(j,i)] = value  
-            self._edges[(i,j)] = value
-            # Remove cache of sparse matrix.
-            self._csr_repr = None
+        """Setter for vertex and edge values."""
+        if self._check_vertex(key):
+            self._vertices[key] = value
+        elif self._check_edge(key):
+            self.addEdge(key[0], key[1])
+            self._matrix_cache = None # Remove cache of sparse matrix.
+            self._edges[key] = value
+        else:
+            raise TypeError('Not a valid key')
 
     def __getitem__(self, key):
-        """Weight value getter."""
-        if self._edges.has_key(key):
+        """Getter for vertex and edge values."""
+        if self._check_vertex(key) and key in self._vertices:
+            return self._vertices[key]
+        elif self._check_edge(key) and key in self._edges:
             return self._edges[key]
         return None
     
     def __delitem__(self, key):
+        # Never delete items.
         pass
     
-    def adj(self, v):
-        """Adjacent nodes."""
-        return self._adj[v]
+    def addEdge(self, fr, to):
+        # Add edge without adding value
+        fr = int(fr)
+        to = int(to)
+        if to not in self._adj[fr]:
+            self._adj[fr].append(to)
+            self._num_edges += 1
+    
+    @property
+    def adj(self):
+        """Adjacency matrix nodes."""
+        return self._adj
     
     def degree(self, v):
         """Number of neighbors."""
         return len(self._adj[v])
+    
+    @property
+    def size(self):
+        return self._size
+    
+    @property
+    def edgeWeights(self):
+        """Edge generator (no repeats)."""
+        for key,value in self._edges:
+            yield (key, value)
+
+    @property
+    def matrix(self):
+        """Convert and cache scipy.sparse matrix representation."""
+        if self._matrix_cache == None:
+            rows = []
+            cols = []
+            data = []
+            for key, value in self._edges.iteritems():
+                rows.append(key[0])
+                cols.append(key[1])
+                data.append(value)
+            self._matrix_cache = csr_matrix((data, (rows, cols)), shape = (self.size, self.size))
+        return self._matrix_cache
+
+    def __str__(self):
+        s = "vertices %d, edges %d" % (self._size, self._num_edges)
+        for key, value in self._vertices.iteritems():
+            s += linesep + 'Node %d: ' % key
+            s += str(value)
+        for key, weight in self._edges.iteritems():
+            s += linesep + '%d --> %d: ' % (key[0], key[1])
+            s += str(weight)
+        return s
+    
+class UndirectedGraph(Graph):
+    def __init__(self, V):
+        super(self.__class__, self).__init__(V)
+    
+    def __setitem__(self, key, value):
+        """Setter for vertex and edge values."""
+        if self._check_vertex(key):
+            self._vertices[key] = value
+        elif self._check_edge(key):
+            self.addEdge(key[0], key[1])
+            self._matrix_cache = None # Remove cache of sparse matrix.
+            self._edges[(key[0], key[1])] = value
+            self._edges[(key[1], key[0])] = value
+        else:
+            raise TypeError('Not a valid key')
+    
+    def addEdge(self, a, b):
+        super(self.__class__, self).addEdge(a,b)
+        super(self.__class__, self).addEdge(b,a)
     
     def __str__(self):
         s = "vertices %d, edges %d" % (self._size, self._num_edges)
@@ -72,27 +150,6 @@ class EdgeWeightedGraph(object):
             if key[0] < key[1]:
                 s += linesep + '%d <--> %d: %f' % (key[0], key[1], weight)
         return s
-    
-    @property
-    def size(self):
-        return self._size
-    
-    @property
-    def edges(self):
-        """Edge generator (no repeats)."""
-        for key,weight in self._edges:
-            if key[0] < key[1] : yield (key, weight)
-
-    @property
-    def matrix(self):
-        """Convert and cache scipy.sparse matrix representation."""
-        if self._csr_repr == None:
-            # TODO: make this faster by directly computing the csr matrix?
-            lil = lil_matrix((self.size, self.size))
-            for key, weight in self._edges.iteritems():
-                lil[key] = weight
-            self._csr_repr = lil.tocsr()
-        return self._csr_repr
 
 class Bipartite(object):
     """
@@ -101,8 +158,6 @@ class Bipartite(object):
     
     Determines if a graph is bipartite and generates partition.
     """
-    isBipartite = True
-    _color = []
     
     def __init__(self, graph):
         self._color = graph.size*[-1]
@@ -160,7 +215,7 @@ def ncolor(graph, n):
     # BFS: label colors as we go.
     while len(q) > 0:
         v = q.popleft()
-        for w in graph.adj(v):
+        for w in graph.adj[v]:
             if colors[w] == -1:
                 colors[w] = (colors[v] + 1) % n
                 q.append(w)
@@ -171,17 +226,17 @@ def ncolor(graph, n):
 
 if __name__ == '__main__':
     """Unit tests."""
-    g = EdgeWeightedGraph(6)
+    g = Graph(6)
+    # Add directed edge weights
     g[0,1] = 1.
     g[1,2] = 1.
     g[2,3] = 1.
     g[3,4] = 1.
     g[4,5] = 1.
     g[5,0] = 1.
-
     print(g)
     print(g.matrix.todense())
-
+    
     b = Bipartite(g)
     assert b.isBipartite == True    
     print(b)

@@ -53,6 +53,12 @@ class MetropolisAlgorithm(MCMethod):
         # XOR will flip the units where select == True
         self._network.units[mask] = numpy.logical_xor(select, self._network.units[mask])
 
+class BinaryGibbsStep(MCMethod):
+    def _updateOnMask(self, mask):
+        sig = 1./(1 + numpy.exp(-self._network.gaps[mask]))
+        select = sig > 0.5
+        self._network.units[mask] = numpy.logical_xor(select, self._network.units[mask])
+
 class WolffClusterAlgorithm(MCMethod):
     def __init__(self, network):
         super(WolffClusterAlgorithm, self).__init__(network)
@@ -90,6 +96,3 @@ class WolffClusterAlgorithm(MCMethod):
     
     def _updateOnMask(self, mask):
         raise NotImplementedError()
-
-class GibbsSampler(MCMethod):
-    pass

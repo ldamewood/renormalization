@@ -5,7 +5,7 @@ from __future__ import print_function
 import numpy
 
 from os import linesep
-from graph import EdgeWeightedGraph, Bipartite
+from graph import UndirectedGraph, Bipartite
 
 class SymmetricHopfieldNetwork(object):
     """
@@ -20,7 +20,7 @@ class SymmetricHopfieldNetwork(object):
     biases = None
         
     def __init__(self, V):
-        self.weights = EdgeWeightedGraph(V)
+        self.weights = UndirectedGraph(V)
         self.units = numpy.random.random(V) < 0.5
         self.biases = numpy.zeros(V)
     
@@ -50,9 +50,6 @@ class SymmetricHopfieldNetwork(object):
         ret += 'Energy: ' + self.energy.__str__() + linesep
         return ret
 
-class SigmoidBeliefNetwork:
-    pass
-
 class BoltzmannMachine(SymmetricHopfieldNetwork):
     """
     The BoltzmannMachine is a Hopfield network with visible and hidden units.
@@ -75,58 +72,42 @@ class BoltzmannMachine(SymmetricHopfieldNetwork):
         """Hidden units."""
         return range(self._visible, self.size)
 
-class RestrictedBoltzmannMachine(Bipartite):
-    """
-    Bipartite class that determines if the partition splits the visible and
-    hidden layers of a Boltzmann machine
-    """
-    
-    _isRBM = True
-    _model = None
-    
+class RestrictedBoltzmannMachine(BoltzmannMachine):
     __RANDOM_RBM_SCALE = 0.01
     
-    def __init__(self, boltzmannMachine):
-        super(RestrictedBoltzmannMachine, self).__init__(boltzmannMachine.weights)
-        self._isRBM = True
-        self._checkRBM(boltzmannMachine)
-
-    def _checkRBM(self, model):
-        # Check if model is RBM
-        color = None
-        for v in model.visible:
-            if color == None:
-                color = self._color[v]
-            elif self._color[v] != color: self._isRBM = False
-        color = None
-        for h in model.hidden:
-            if color == None:
-                color = self._color[h]
-            elif self._color[h] != color: self._isRBM = False
-            
-    @property
-    def isRBM(self):
-        return self._isRBM
+    def __init__(self, visible, hidden):
+        super(RestrictedBoltzmannMachine, self).__init__(visible, hidden)
+        self._isRBM = None
     
     @property
-    def visible_mask(self):
-        # Get all units the same color as the first unit
-        return self.mask(self._color[0])
-
-    @property
-    def hidden_mask(self):
-        # Get all units the same color as the last unit
-        return self.mask(self._color[-1])
+    def isRBM(self):
+        if self._isRBM == None:
+            bipartite = Bipartite(self.weights)
+            self._isRBM = True
+            # Check if model is RBM
+            color = None
+            for v in self.visible:
+                if color == None:
+                    color = bipartite._color[v]
+                elif bipartite._color[v] != color: self._isRBM = False
+            color = None
+            for h in self.hidden:
+                if color == None:
+                    color = bipartite._color[h]
+                elif bipartite._color[h] != color: self._isRBM = False
+        return self._isRBM
+    
     
     @classmethod
     def randomRBM(cls, visible, hidden):
         """Create a random restricted Boltzmann machine."""
-        this = BoltzmannMachine(visible, hidden)
+        this = RestrictedBoltzmannMachine(visible, hidden)
         this.units[:] = numpy.random.random(this.size) < 0.5
         this.biases[:] = numpy.random.normal(scale = cls.__RANDOM_RBM_SCALE, size = this.size)
         for v in this.visible:
             for h in this.hidden:
                 this.weights[v,h] = numpy.random.normal(scale = cls.__RANDOM_RBM_SCALE)
+        assert this.isRBM
         return this
 
 def _testRandomHopfieldNecklace():
@@ -148,70 +129,10 @@ def _testRandomHopfieldNecklace():
         assert abs(abs(E - network.energy) - abs(network.gaps[i])) < 1e-12
 
 def _testRandomRBM():
-    boltzmann = RestrictedBoltzmannMachine.randomRBM(4,5)
-    rbm = RestrictedBoltzmannMachine(boltzmann)
+    rbm = RestrictedBoltzmannMachine.randomRBM(4,5)
     assert rbm.isRBM
-    print(boltzmann)
     print(rbm)
-
-def _spin32RBM():
-    """
-    Example of a RBM that represents a the renormalization of 3 spin-1/2 objects
-    into a spin-3/2 object.
-    """
-    pass
-#    import itertools
-#
-#    # Polynomial fit for the weights of the RBM.
-#    x = numpy.zeros([11,32])
-#    for i,v in enumerate(itertools.product(range(2),range(2),range(2),range(2),range(2))):
-#        print(v)
-#        x[:5,i] = v
-#        x[5,i] = v[0]*v[3]
-#        x[6,i] = v[0]*v[4]
-#        x[7,i] = v[1]*v[3]
-#        x[8,i] = v[1]*v[4]
-#        x[9,i] = v[2]*v[3]
-#        x[10,i] = v[2]*v[4]
-#    # These values of y give large probabilities for correct matches.
-#    y = numpy.array([21.92723856,-23.02585093,-23.02585093,-23.02585093,
-#                    -23.02585093,21.92723856,-23.02585093,-23.02585093,
-#                    -23.02585093,21.92723856,-23.02585093,-23.02585093,
-#                    -23.02585093,21.92723856,-23.02585093,-23.02585093,
-#                    -23.02585093,-23.02585093,21.92723856,-23.02585093,
-#                    -23.02585093,-23.02585093,21.92723856,-23.02585093,
-#                    -23.02585093,-23.02585093,21.92723856,-23.02585093,
-#                    -23.02585093,-23.02585093,-23.02585093,21.92723856])
-#    solver1 = NormalSVD(reglambda = 100.)
-#    #solver1 = NormalSVD()
-#    ans = solver1.getWeights(x,y)
-#    print(ans)
-#    
-#    #energies = [ -3./2, -1./2, -1./2, -1./2, 1./2, 1./2, 1./2, 3./2 ]
-#    #probs = numpy.exp(-numpy.array(energies))
-#    
-#    # Manually setup a RBM that gives the correct renormalization.
-#    bm = BoltzmannMachine(3,2)
-#    bm.biases = [-8.70315643,  -8.70315643,  -8.70315643, -19.0956329 ,    -7.85848425]
-#    bm.weights[0,3] = 43.26091464
-#    bm.weights[0,4] = -24.16506737
-#    bm.weights[1,3] = -1.68992731
-#    bm.weights[1,4] = 20.78577458
-#    bm.weights[2,3] = -1.68992731
-#    bm.weights[2,4] = 20.78577458
-#    rbm = RestrictedBoltzmannMachine(bm)
-#    solver = SigmoidUpdate(bm)
-#    for v in itertools.product(range(2),range(2)):
-#        # Loop over the hidden layer states and print the total spin using the
-#        # visible layer
-#        bm.units[rbm.hidden] = v
-#        solver._updateOnMask(rbm.visible)
-#        print('Hidden layer representation: (%d %d)' % (v[0], v[1]))
-#        print('Total spin: %f' % (1. * sum(bm.units[rbm.visible]) - 3./2))
-
-    # TODO: train the RBM from a random state
 
 if __name__ == '__main__':
     _testRandomHopfieldNecklace()
     _testRandomRBM()
-    #_spin32RBM()
